@@ -313,7 +313,7 @@ view(PoolPid, DocName, ViewName, Args) ->
         Keys ->
             http(PoolPid, string:join([Path, query_args(proplists:delete(keys, Args))], "?"), binary_to_list(iolist_to_binary(jiffy:encode({[{keys, Keys}]}))), "application/json", post, view)
     end,
-    decode_query_resp(Resp).
+    decode_http_resp(Resp).
 
 foldl(Func, Acc, {PoolPid, DocName, ViewName, Args}) ->
     case view(PoolPid, DocName, ViewName, Args) of
@@ -343,12 +343,12 @@ foreach(Func, {PoolPid, DocName, ViewName, Args}) ->
 set_design_doc(PoolPid, DocName, DesignDoc) ->
     Path = string:join(["_design", DocName], "/"),
     Resp = http(PoolPid, Path, binary_to_list(iolist_to_binary(jiffy:encode(DesignDoc))), "application/json", put, view),
-    decode_update_design_doc_resp(Resp).
+    decode_http_resp(Resp).
 
 remove_design_doc(PoolPid, DocName) ->
     Path = string:join(["_design", DocName], "/"),
     Resp = http(PoolPid, Path, "", "application/json", delete, view),
-    decode_update_design_doc_resp(Resp).
+    decode_http_resp(Resp).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%    INTERNAL FUNCTIONS     %%%
@@ -371,24 +371,11 @@ http_method(delete) -> 3.
 query_args(Args) when is_list(Args) ->
     string:join([query_arg(A) || A <- Args], "&").
 
-decode_query_resp({ok, _, Resp}) ->
-    case jiffy:decode(Resp) of
-        {[{<<"total_rows">>, TotalRows}, {<<"rows">>, Rows}]} ->
-            {ok, {TotalRows, lists:map(fun ({Row}) -> Row end, Rows)}};
-        {[{<<"rows">>, Rows}]} ->
-            {ok, {lists:map(fun ({Row}) -> Row end, Rows)}};
-        {[{<<"error">>,Error}, {<<"reason">>, Reason}]} ->
-            {error, {view_error(Error), Reason}}
-    end;
-decode_query_resp({error, _} = E) -> E.
-
-decode_update_design_doc_resp({ok, Http_Code, _Resp}) when 200 =< Http_Code andalso Http_Code < 300 -> ok;
-decode_update_design_doc_resp({ok, _Http_Code, Resp}) ->
-  case jiffy:decode(Resp) of
-    {[{<<"error">>,Error}, {<<"reason">>, Reason}]} ->
-            {error, {view_error(Error), Reason}};
-    _Other -> {error, {unknown_error, Resp}}
-  end.
+decode_http_resp({ok, Http_Code, Resp}) when 200 =< Http_Code andalso Http_Code < 300 ->
+    {ok, Resp};
+decode_http_resp({ok, _Http_Code, Resp}) ->
+    {error, Resp};
+decode_http_resp({error, _} = E) -> E.
 
 query_arg({descending, true}) -> "descending=true";
 query_arg({descending, false}) -> "descending=false";
@@ -429,6 +416,3 @@ query_arg({stale, update_after}) -> "stale=update_after";
 query_arg({startkey, V}) when is_list(V) -> string:join(["startkey", V], "=");
 
 query_arg({startkey_docid, V}) when is_list(V) -> string:join(["startkey_docid", V], "=").
-
-view_error(Error) -> list_to_atom(binary_to_list(Error)).
-

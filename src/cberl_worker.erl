@@ -238,11 +238,13 @@ remove(Key, N, #instance{handle = Handle}) ->
         Reply -> Reply
     end.
 
-http(Path, Body, ContentType, Method, Chunked, #instance{handle = Handle}) ->
+http(Path, Body, ContentType, Method, Chunked, #instance{handle = Handle, transcoder = Transcoder}) ->
     ok = cberl_nif:control(Handle, op(http), [Path, Body, ContentType, Method, Chunked]),
     receive
-        Reply -> Reply
+        Result -> handle_http_result(Transcoder, Result)
     end.
+handle_http_result(_Transcoder, {_Status, _Http_Code, <<>>} = R) -> R;
+handle_http_result(Transcoder, {Status, Http_Code, Resp}) -> {Status, Http_Code, Transcoder:decode_value(Transcoder:flag(json), Resp)}.
 
 -spec operation_value(operation_type()) -> integer().
 operation_value(add) -> ?'CBE_ADD';
